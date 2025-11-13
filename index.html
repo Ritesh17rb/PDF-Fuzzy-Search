@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Fuzzy PDF Search</title>
+    <style>
+        body { 
+            margin: 0; 
+            background-color: #f1f1f1; 
+            font-family: sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        #header {
+            width: 100%;
+            background-color: #333;
+            color: white;
+            padding: 10px 20px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.3);
+            position: sticky;
+            top: 0;
+            z-index: 1000;
+        }
+        #header h2 {
+            margin: 0 0 6px 0;
+            font-weight: 600;
+        }
+        #status {
+            font-size: 0.9em;
+        }
+        #nav {
+            margin-top: 8px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+        #nav input[type="number"] {
+            width: 4.5em;
+        }
+        #pdf-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 20px;
+            width: 100%;
+        }
+        /* Each PDF page is wrapped so we can layer canvas + text */
+        .page-wrapper {
+            position: relative;
+            margin-bottom: 16px;
+        }
+        /* Canvas styling */
+        .page-wrapper > canvas {
+            border: 1px solid #ccc;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+            display: block;
+            pointer-events: none; /* Allow text layer to capture selection */
+        }
+        /* PDF.js text layer for selectable text */
+        .textLayer {
+            position: absolute;
+            left: 0;
+            top: 0;
+            right: 0;
+            bottom: 0;
+            /* Hide overlay text to avoid ghosting, keep selection */
+            color: transparent;
+            opacity: 1;
+            user-select: text;
+            -webkit-user-select: text;
+            -ms-user-select: text;
+            z-index: 2; /* Above canvas */
+            pointer-events: none; /* Let child spans capture events */
+        }
+        .textLayer > span,
+        .textLayer > div {
+            color: transparent; /* Prevent visible overlay text */
+            position: absolute;
+            transform-origin: 0% 0%;
+            white-space: pre;
+            pointer-events: all;
+            cursor: text;
+        }
+        .textLayer .endOfContent {
+            display: block;
+            position: absolute;
+            left: 0;
+            top: 0;
+            width: 1px;
+            height: 1px;
+        }
+        /* Edge-like selection blue */
+        .textLayer ::selection { background: rgba(0, 120, 212, 0.40); }
+        .textLayer ::-moz-selection { background: rgba(0, 120, 212, 0.40); }
+        /* This is our highlight style! */
+        .highlight {
+            position: absolute;
+            background-color: rgba(255, 255, 0, 0.5); /* Yellow highlight */
+            border: 1px solid #FFD700;
+            pointer-events: none; /* Lets you select text underneath */
+            z-index: 1; /* Below text layer so selection highlight shows */
+        }
+    </style>
+</head>
+<body>
+
+    <div id="header">
+        <h2>Fuzzy PDF Finder</h2>
+        <div id="status">Loading...</div>
+        <div id="nav">
+            <button id="prev-page" title="Previous Page">Prev</button>
+            <label>
+                Page
+                <input id="page-number" type="number" min="1" value="1" />
+                /
+                <span id="page-count">?</span>
+            </label>
+            <button id="next-page" title="Next Page">Next</button>
+            <button id="go-page" title="Go to Page">Go</button>
+        </div>
+        <div id="results" aria-live="polite" style="margin-top:8px; max-width: 100%;">
+            <!-- Top matches will appear here -->
+        </div>
+    </div>
+
+    <div id="pdf-container"></div>
+
+    <script src="lib/pdf.js"></script>
+    <script src="lib/fuse.min.js"></script>
+    
+    <script src="custom-logic.js"></script>
+
+</body>
+</html>
