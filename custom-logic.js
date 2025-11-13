@@ -4,7 +4,8 @@
  * Gets the PDF URL from the query string and wraps it in YOUR proxy
  * IMPORTANT: Don't encode the URL parameter - the proxy expects it raw
  */
-const YOUR_PROXY_URL = 'https://fuzzy-proxy-njp226ikh-riteshs-projects-58a4d698.vercel.app/api/proxy?url=';
+// const YOUR_PROXY_URL = 'https://fuzzy-proxy-njp226ikh-riteshs-projects-58a4d698.vercel.app/api/proxy?url=';
+const YOUR_PROXY_URL = 'https://fuzzy-proxy-k3f89ouqm-riteshs-projects-58a4d698.vercel.app/api/proxy?url=';
 
 function getPdfUrl() {
     // Replace this with YOUR actual Vercel deployment URL
