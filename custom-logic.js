@@ -1,47 +1,36 @@
 // === CONFIGURATION ===
 
 /**
- * Gets the PDF URL from the query string (?pdfurl=...)
- * and wraps it in a CORS proxy to prevent security errors.
- * Falls back to 'sample.pdf' if not provided.
+ * Gets the PDF URL from the query string and wraps it in YOUR proxy
+ * IMPORTANT: Don't encode the URL parameter - the proxy expects it raw
  */
 function getPdfUrl() {
-    // This free proxy fetches the PDF for us
-    // and adds the correct "Access-Control-Allow-Origin" headers.
-    // This is the new, working one
-    const PROXY_URL = 'https://fuzzy-proxy-r6vj0p99b-riteshs-projects-58a4d698.vercel.app/?url=';
- 
+    // Replace this with YOUR actual Vercel deployment URL
+    const YOUR_PROXY_URL = 'https://fuzzy-proxy-3ym45t58n-riteshs-projects-58a4d698.vercel.app/api/proxy?url=';
+    
     const params = new URLSearchParams(window.location.search);
-    const url = params.get('pdfurl');
+    const originalUrl = params.get('pdfurl');
 
-    if (url && url.length > 0) {
-        // We don't need to encode, just append the raw URL
-        const proxiedUrl = PROXY_URL + url;
+    if (originalUrl && originalUrl.length > 0) {
+        // DON'T encode again! The query param is already encoded by the bookmarklet
+        const proxiedUrl = YOUR_PROXY_URL + originalUrl;
         
-        console.log("Original PDF URL:", url);
-        console.log("Using proxied URL:", proxiedUrl);
+        console.log("Original PDF URL:", originalUrl);
+        console.log("Proxied URL:", proxiedUrl);
         return proxiedUrl;
     }
     
     console.warn("No 'pdfurl' parameter found in URL. Loading local 'sample.pdf'.");
-    // This will now only load if you visit your GitHub page directly
-    // AND you have 'sample.pdf' uploaded to your repo.
     return 'sample.pdf'; 
 }
 
-// Get the URL to load from the function above
 const PDF_URL = getPdfUrl(); 
-
-// How "fuzzy" to be (0.0 = perfect match, 1.0 = any match). 
-// 0.4 is a good starting point.
 const FUZZY_SEARCH_THRESHOLD = 0.4;
 
-
-// Tell pdf.js where its "worker" file is
-// This path should be correct since your file is in 'lib/pdf.worker.js'
+// Tell pdf.js where its worker file is
 pdfjsLib.GlobalWorkerOptions.workerSrc = 'lib/pdf.worker.js';
 
-// Get our HTML elements from index.html
+// Get HTML elements
 const PDF_CONTAINER = document.getElementById('pdf-container');
 const STATUS_DISPLAY = document.getElementById('status');
 const PAGE_COUNT_DISPLAY = document.getElementById('page-count');
@@ -57,20 +46,25 @@ const renderedPages = new Set();
 let renderQueue = Promise.resolve();
 
 /**
- * Main function to run everything
+ * Main function
  */
 (async function main() {
     try {
-        // 1. Get the search term from the URL (supports ?text=... or #?text=...)
+        // 1. Get search term
         const searchTerm = getSearchTerm();
         if (!searchTerm) {
-            STATUS_DISPLAY.textContent = "Ready. (Add #?text=your+quote to the URL to search)";
+            STATUS_DISPLAY.textContent = "Ready. (Add ?text=your+quote to the URL to search)";
         } else {
             STATUS_DISPLAY.textContent = `Searching for: "${searchTerm}"...`;
         }
 
-        // 2. Load the PDF document
-        const pdf = await pdfjsLib.getDocument(PDF_URL).promise;
+        // 2. Load PDF
+        console.log("Loading PDF from:", PDF_URL);
+        const pdf = await pdfjsLib.getDocument({
+            url: PDF_URL,
+            withCredentials: false
+        }).promise;
+        
         gPdf = pdf;     
         if (PAGE_COUNT_DISPLAY) PAGE_COUNT_DISPLAY.textContent = pdf.numPages;
         if (PAGE_NUMBER_INPUT) PAGE_NUMBER_INPUT.max = String(pdf.numPages);
@@ -78,18 +72,16 @@ let renderQueue = Promise.resolve();
        
         STATUS_DISPLAY.textContent = "PDF loaded. Extracting text...";
 
-        // 3. Extract text from ALL pages into a searchable "corpus"
+        // 3. Extract text
         console.log("Extracting text from PDF...");
         const searchableCorpus = await extractTextCorpus(pdf);
-        console.log(searchableCorpus)
         console.log(`Extracted ${searchableCorpus.length} lines of text.`);
         STATUS_DISPLAY.textContent = `Extracted ${searchableCorpus.length} lines. Searching...`;
 
-        // 4. Run the fuzzy search
+        // 4. Fuzzy search
         let bestMatch = null;
         let topMatches = [];
         if (searchTerm) {
-            // We need fuse.min.js for this. Make sure it's in your index.html
             const fuse = new Fuse(searchableCorpus, {
                 keys: ['text'],
                 threshold: FUZZY_SEARCH_THRESHOLD,
@@ -101,9 +93,8 @@ let renderQueue = Promise.resolve();
             });
 
             let results = fuse.search(searchTerm);
-            // console.log(`Results: ${results}`)
 
-            // Fallback: simple substring if no fuzzy results
+            // Fallback: substring search
             if (results.length === 0) {
                 const q = searchTerm.toLowerCase();
                 const substrHits = searchableCorpus
@@ -113,7 +104,6 @@ let renderQueue = Promise.resolve();
             }
 
             if (results.length > 0) {
-                // Top 5 matches
                 topMatches = results.slice(0, 5);
                 bestMatch = topMatches[0];
                 console.log(`Top matches:`, topMatches.map(r => ({ page: r.item.pageNum, score: r.score })));
@@ -125,14 +115,12 @@ let renderQueue = Promise.resolve();
             }
         }
 
-        // 5. Render pages with priority on the matched page
+        // 5. Render pages
         console.log("Rendering PDF pages...");
         if (bestMatch) {
             const matchPage = bestMatch.item.pageNum;
-            // Render matched page first for fast highlight
             await renderPage(pdf, matchPage, bestMatch);
 
-            // Scroll immediately to the matched page
             const targetPageId = `page-${matchPage}`;
             const targetElement = document.getElementById(targetPageId);
             if (targetElement) {
@@ -141,7 +129,6 @@ let renderQueue = Promise.resolve();
                 targetElement.scrollIntoView({ behavior: 'smooth', block: 'start' });
             }
 
-            // Render the remaining pages in the background (sequential to save memory)
             setTimeout(async () => {
                 for (let i = 1; i <= pdf.numPages; i++) {
                     if (i === matchPage) continue;
@@ -149,7 +136,6 @@ let renderQueue = Promise.resolve();
                 }
             }, 0);
         } else {
-            // No match: render sequentially
             for (let i = 1; i <= pdf.numPages; i++) {
                 await renderPage(pdf, i, null);
             }
@@ -162,40 +148,52 @@ let renderQueue = Promise.resolve();
 
     } catch (error) {
         console.error("Failed to load or process PDF:", error);
-        // Check if this is a CORS error
-        let errorMsg = error.message;
-        if (error.name === 'UnknownErrorException' || (error.message && error.message.toLowerCase().includes('cors'))) {
-            errorMsg = `CORS Error: The PDF server at '${PDF_URL.replace('https://corsproxy.io/?', '')}' does not allow requests, even from a proxy. Some PDFs are locked down and cannot be loaded. (See console for details.)`;
-            console.error(errorMsg);
+        
+        let errorMsg = error.message || 'Unknown error';
+        let errorDetails = '';
+        
+        // Check if it's a network/CORS error
+        if (error.name === 'UnknownErrorException' || 
+            errorMsg.toLowerCase().includes('cors') ||
+            errorMsg.toLowerCase().includes('network')) {
+            
+            errorDetails = `
+                <h3>Debugging steps:</h3>
+                <ol>
+                    <li>Open browser console (F12) and check for errors</li>
+                    <li>Verify your proxy is deployed and working</li>
+                    <li>Test your proxy directly: <a href="${YOUR_PROXY_URL}https://alex.smola.org/drafts/thebook.pdf" target="_blank">Test Proxy</a></li>
+                    <li>Check if the original PDF URL is accessible</li>
+                </ol>
+            `;
         }
-        STATUS_DISPLAY.textContent = `Error: ${errorMsg}. Check console.`;
-        PDF_CONTAINER.innerHTML = `<h2 style="color: red;">Error: Could not load PDF.</h2><p>${errorMsg}</p><p>The URL being loaded was: <strong>${PDF_URL}</strong></p>`;
+        
+        STATUS_DISPLAY.textContent = `Error: ${errorMsg}`;
+        PDF_CONTAINER.innerHTML = `
+            <div style="background:white; padding:20px; border-radius:8px; max-width:700px; margin:20px;">
+                <h2 style="color:red;">❌ Could not load PDF</h2>
+                <p><strong>Error:</strong> ${errorMsg}</p>
+                <p><strong>PDF URL:</strong> <code style="word-break:break-all;">${PDF_URL}</code></p>
+                ${errorDetails}
+            </div>
+        `;
     }
 })();
 
 /**
- * Gets the search query from the URL hash
- * e.g., ...index.html#?text=this+is+my+quote
+ * Gets the search query from URL
  */
 function getSearchTerm() {
-    // Prefer query string (?text=...), but support hash (#?text=...)
     const params = new URLSearchParams(window.location.search);
     let q = params.get('text');
     if (q && q.length) {
         return decodeURIComponent(q.replace(/\+/g, ' ')).trim();
     }
-
-    const hash = window.location.hash;
-    if (hash.startsWith('#?text=')) {
-        return decodeURIComponent(hash.substring(7).replace(/\+/g, ' ')).trim();
-    }
     return null;
 }
 
 /**
- * Loops through all pages, extracts text, and builds a
- * searchable array of objects.
- * This is the most complex part. It tries to reconstruct lines.
+ * Extract text from all pages
  */
 async function extractTextCorpus(pdf) {
     const corpus = [];
@@ -204,7 +202,6 @@ async function extractTextCorpus(pdf) {
         const page = await pdf.getPage(i);
         const textContent = await page.getTextContent({ normalizeWhitespace: true });
         
-        // We'll store lines as objects with their text and location
         let lines = [];
         let currentLine = null;
         
@@ -213,28 +210,23 @@ async function extractTextCorpus(pdf) {
             const x = tx[4];
             const y = tx[5];
             const w = item.width || 0;
-            // Approximate text height from transform scale if not provided
             const h = (item.height != null) ? item.height : Math.max(Math.abs(tx[3]), 10);
 
             if (currentLine === null) {
                 currentLine = { text: item.str, x, y, width: w, height: h, pageNum: i };
-            } else if (Math.abs(currentLine.y - y) <= 3) { // Same line (tolerance)
-                // If this item appears to be to the right, extend the width
+            } else if (Math.abs(currentLine.y - y) <= 3) {
                 const rightEdge = Math.max(currentLine.x + currentLine.width, x + w);
                 currentLine.width = rightEdge - currentLine.x;
                 currentLine.text += ' ' + item.str;
-                // Keep the tallest glyph height in the line
                 currentLine.height = Math.max(currentLine.height, h);
-            } else { // New line
+            } else {
                 lines.push(currentLine);
                 currentLine = { text: item.str, x, y, width: w, height: h, pageNum: i };
             }
         }
-        if (currentLine) lines.push(currentLine); // Push last line
+        if (currentLine) lines.push(currentLine);
         
-        // Clean up and add to corpus
         for (const line of lines) {
-             // Normalize text: replace multiple spaces with one, and trim
             const normalizedText = line.text.replace(/\s+/g, ' ').trim();
             if (normalizedText.length > 0) {
                 corpus.push({
