@@ -6,7 +6,7 @@
  */
 function getPdfUrl() {
     // Replace this with YOUR actual Vercel deployment URL
-    const YOUR_PROXY_URL = 'https://fuzzy-proxy-3ym45t58n-riteshs-projects-58a4d698.vercel.app/api/proxy?url=';
+    const YOUR_PROXY_URL = 'https://fuzzy-proxy-njp226ikh-riteshs-projects-58a4d698.vercel.app/api/proxy?url=';
     
     const params = new URLSearchParams(window.location.search);
     const originalUrl = params.get('pdfurl');
